@@ -8,13 +8,25 @@ const HEALTH_CHECK_TTL = 5 * 60 * 1000;
 const HEALTH_CHECK_TIMEOUT = 5000;
 const MAX_CONTENT_LENGTH = 100 * 1024;
 const MAX_HEALTH_CHECK_BYTES = 10 * 1024;
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+const RATE_LIMIT_PATTERNS = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i;
+
+const decoder = new TextDecoder();
+
+function looksRateLimited(sample: string): boolean {
+  return RATE_LIMIT_PATTERNS.test(sample);
+}
+
+function recordHealth(cacheKey: string, healthy: boolean): boolean {
+  healthCache.set(cacheKey, { isHealthy: healthy, lastChecked: Date.now() });
+  return healthy;
+}
 
 async function checkInstanceHealth(instance: URL): Promise<boolean> {
   const cacheKey = instance.toString();
   const cached = healthCache.get(cacheKey);
-  const now = Date.now();
 
-  if (cached && now - cached.lastChecked < HEALTH_CHECK_TTL) {
+  if (cached && Date.now() - cached.lastChecked < HEALTH_CHECK_TTL) {
     return cached.isHealthy;
   }
 
@@ -22,30 +34,22 @@ async function checkInstanceHealth(instance: URL): Promise<boolean> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
 
-    const response = await fetch(instance.toString(), {
-      method: "GET",
+    const response = await fetch(cacheKey, {
       signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
+      headers: { "User-Agent": USER_AGENT },
     });
 
     clearTimeout(timeout);
 
-    if (!response.ok) {
-      healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
-      return false;
-    }
+    if (!response.ok) return recordHealth(cacheKey, false);
 
-    const contentLength = response.headers.get('content-length');
+    const contentLength = response.headers.get("content-length");
     if (contentLength && parseInt(contentLength) > MAX_CONTENT_LENGTH) {
-      healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
-      return false;
+      return recordHealth(cacheKey, false);
     }
 
     const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let text = '';
+    let text = "";
     let totalRead = 0;
 
     while (totalRead < MAX_HEALTH_CHECK_BYTES) {
@@ -56,14 +60,10 @@ async function checkInstanceHealth(instance: URL): Promise<boolean> {
     }
     await reader.cancel();
 
-    const looksRateLimited = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i.test(text);
-
-    const isHealthy = !looksRateLimited;
-    healthCache.set(cacheKey, { isHealthy, lastChecked: now });
-    return isHealthy;
-  } catch (error) {
-    healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
-    return false;
+    const healthy = !looksRateLimited(text);
+    return recordHealth(cacheKey, healthy);
+  } catch {
+    return recordHealth(cacheKey, false);
   }
 }
 
