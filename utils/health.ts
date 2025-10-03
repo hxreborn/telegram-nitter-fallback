@@ -6,6 +6,8 @@ const healthCache = new Map<
 >();
 const HEALTH_CHECK_TTL = 5 * 60 * 1000;
 const HEALTH_CHECK_TIMEOUT = 5000;
+const MAX_CONTENT_LENGTH = 100 * 1024;
+const MAX_HEALTH_CHECK_BYTES = 10 * 1024;
 
 async function checkInstanceHealth(instance: URL): Promise<boolean> {
   const cacheKey = instance.toString();
@@ -35,9 +37,26 @@ async function checkInstanceHealth(instance: URL): Promise<boolean> {
       return false;
     }
 
-    const text = await response.text();
-    const textSample = text.slice(0, 2048);
-    const looksRateLimited = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i.test(textSample);
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > MAX_CONTENT_LENGTH) {
+      healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
+      return false;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let totalRead = 0;
+
+    while (totalRead < MAX_HEALTH_CHECK_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      totalRead += value.length;
+    }
+    await reader.cancel();
+
+    const looksRateLimited = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i.test(text);
 
     const isHealthy = !looksRateLimited;
     healthCache.set(cacheKey, { isHealthy, lastChecked: now });
