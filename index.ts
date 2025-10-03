@@ -1,6 +1,7 @@
 import { Telegraf } from "telegraf";
 import { config } from "dotenv";
 import { MessageEntity } from "telegraf/typings/core/types/typegram";
+import { pickHealthyInstance } from "./utils/health";
 config();
 
 const nitterLinks = process.env.NITTER_INSTANCES.trim()
@@ -21,7 +22,18 @@ bot.on(["audio", "photo", "video", "document"], async (ctx) => {
     ctx.message.caption_entities
   );
 
-  const nitter = selectRandomNitter();
+  if (twitterLinks.length === 0) {
+    return;
+  }
+
+  const nitter = await pickHealthyInstance(nitterLinks);
+
+  if (!nitter) {
+    await ctx.reply("⚠️ All Nitter instances are currently down. Please try again later.", {
+      reply_to_message_id: ctx.message.message_id,
+    });
+    return;
+  }
 
   for (let link of twitterLinks) {
     await ctx.reply(prepareNewLink(link, nitter), {
@@ -36,7 +48,18 @@ bot.on("text", async (ctx) => {
     ctx.message.entities
   );
 
-  const nitter = selectRandomNitter();
+  if (twitterLinks.length === 0) {
+    return;
+  }
+
+  const nitter = await pickHealthyInstance(nitterLinks);
+
+  if (!nitter) {
+    await ctx.reply("⚠️ All Nitter instances are currently down. Please try again later.", {
+      reply_to_message_id: ctx.message.message_id,
+    });
+    return;
+  }
 
   for (let link of twitterLinks) {
     await ctx.reply(prepareNewLink(link, nitter), {
@@ -61,7 +84,7 @@ bot
     console.log("Bot started");
   });
 
-const rTwitterLink = /^(\w+:\/\/)?(?:mobile\.)?twitter\.com\b/i;
+const rTwitterLink = /^(\w+:\/\/)?(?:mobile\.)?(twitter\.com|x\.com)\b/i;
 
 function extractTwitterLinks(text?: string, entities: MessageEntity[] = []) {
   return entities
@@ -77,10 +100,6 @@ function extractTwitterLinks(text?: string, entities: MessageEntity[] = []) {
     })
     .filter((link): link is string => link && rTwitterLink.test(link))
     .map((link) => new URL(link.includes("://") ? link : `https://${link}`));
-}
-
-function selectRandomNitter() {
-  return nitterLinks[Math.floor(Math.random() * nitterLinks.length)];
 }
 
 function prepareNewLink(source: URL, replacement: URL) {
