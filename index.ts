@@ -105,8 +105,9 @@ function extractTwitterLinks(text?: string, entities: MessageEntity[] = []) {
 function prepareNewLink(source: URL, replacement: URL) {
   const url = new URL(source);
 
-  url.host = replacement.host;
-
+  url.protocol = replacement.protocol;
+  url.hostname = replacement.hostname;
+  url.port = replacement.port;
   url.search = "";
 
   return url.toString();

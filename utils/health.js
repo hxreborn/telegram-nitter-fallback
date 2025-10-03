@@ -52,7 +52,7 @@ var HEALTH_CHECK_TTL = 5 * 60 * 1000;
 var HEALTH_CHECK_TIMEOUT = 5000;
 function checkInstanceHealth(instance) {
     return __awaiter(this, void 0, void 0, function () {
-        var cacheKey, cached, now, controller_1, timeout, response, isHealthy, error_1;
+        var cacheKey, cached, now, controller_1, timeout, response, text, textSample, looksRateLimited, isHealthy, error_1;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -64,7 +64,7 @@ function checkInstanceHealth(instance) {
                     }
                     _a.label = 1;
                 case 1:
-                    _a.trys.push([1, 3, , 4]);
+                    _a.trys.push([1, 4, , 5]);
                     controller_1 = new AbortController();
                     timeout = setTimeout(function () { return controller_1.abort(); }, HEALTH_CHECK_TIMEOUT);
                     return [4 /*yield*/, (0, node_fetch_1["default"])(instance.toString(), {
@@ -77,14 +77,23 @@ function checkInstanceHealth(instance) {
                 case 2:
                     response = _a.sent();
                     clearTimeout(timeout);
-                    isHealthy = response.ok;
+                    if (!response.ok) {
+                        healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
+                        return [2 /*return*/, false];
+                    }
+                    return [4 /*yield*/, response.text()];
+                case 3:
+                    text = _a.sent();
+                    textSample = text.slice(0, 2048);
+                    looksRateLimited = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i.test(textSample);
+                    isHealthy = !looksRateLimited;
                     healthCache.set(cacheKey, { isHealthy: isHealthy, lastChecked: now });
                     return [2 /*return*/, isHealthy];
-                case 3:
+                case 4:
                     error_1 = _a.sent();
                     healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
                     return [2 /*return*/, false];
-                case 4: return [2 /*return*/];
+                case 5: return [2 /*return*/];
             }
         });
     });

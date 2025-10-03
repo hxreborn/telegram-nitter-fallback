@@ -30,7 +30,16 @@ async function checkInstanceHealth(instance: URL): Promise<boolean> {
 
     clearTimeout(timeout);
 
-    const isHealthy = response.ok;
+    if (!response.ok) {
+      healthCache.set(cacheKey, { isHealthy: false, lastChecked: now });
+      return false;
+    }
+
+    const text = await response.text();
+    const textSample = text.slice(0, 2048);
+    const looksRateLimited = /Instance has been rate limited|Just a moment|Enable JavaScript and cookies|Checking your browser/i.test(textSample);
+
+    const isHealthy = !looksRateLimited;
     healthCache.set(cacheKey, { isHealthy, lastChecked: now });
     return isHealthy;
   } catch (error) {
