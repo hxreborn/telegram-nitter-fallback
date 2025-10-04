@@ -5,3 +5,5 @@ node_modules/
 
 index.js
 utils/*.js
+
+CLAUDE.md

@@ -48,17 +48,17 @@ async function checkInstanceHealth(instance: URL): Promise<boolean> {
       return recordHealth(cacheKey, false);
     }
 
-    const reader = response.body.getReader();
     let text = "";
     let totalRead = 0;
 
-    while (totalRead < MAX_HEALTH_CHECK_BYTES) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-      totalRead += value.length;
+    for await (const chunk of response.body) {
+      text += decoder.decode(chunk, { stream: true });
+      totalRead += chunk.length;
+      if (totalRead >= MAX_HEALTH_CHECK_BYTES) {
+        response.body.destroy();
+        break;
+      }
     }
-    await reader.cancel();
 
     const healthy = !looksRateLimited(text);
     return recordHealth(cacheKey, healthy);
